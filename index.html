@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manager Mood Pulse</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    body { font-feature-settings: "cv11", "ss01"; }
+
+    .glass {
+      background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 20px 50px -20px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .glass-inner {
+      background: rgba(9, 9, 11, 0.55);
+      border: 1px solid rgba(255,255,255,0.07);
+    }
+
+    textarea { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+    .thin-scroll { scrollbar-width: thin; scrollbar-color: #3f3f46 transparent; }
+    .thin-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 9999px; }
+
+    .gauge-ring {
+      transition: stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1),
+                  stroke 0.5s ease, filter 0.5s ease;
+    }
+
+    @keyframes rowIn {
+      from { opacity: 0; transform: translateY(-8px); background-color: rgba(99,102,241,0.18); }
+      to   { opacity: 1; transform: translateY(0); background-color: transparent; }
+    }
+    .row-enter { animation: rowIn 0.9s ease-out; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 0.9s linear infinite; }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+    .pulse-dot { animation: pulseDot 2s ease-in-out infinite; }
+
+    .modal-panel { transition: all 300ms ease; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .row-enter, .spinner, .pulse-dot { animation: none; }
+      .gauge-ring, .modal-panel { transition: none; }
+    }
+  </style>
+</head>
+
+<body class="bg-zinc-950 text-zinc-200 font-sans antialiased min-h-screen">
+
+  <!-- Ambient background -->
+  <div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden="true">
+    <div class="absolute -top-40 -left-32 h-[28rem] w-[28rem] rounded-full bg-indigo-600/20 blur-[120px]"></div>
+    <div class="absolute top-1/3 -right-40 h-[30rem] w-[30rem] rounded-full bg-emerald-500/10 blur-[130px]"></div>
+    <div class="absolute -bottom-40 left-1/3 h-[26rem] w-[26rem] rounded-full bg-rose-500/10 blur-[130px]"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-6 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500 to-emerald-400 grid place-items-center shadow-lg shadow-indigo-500/20">
+        <svg class="h-6 w-6 text-zinc-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12h4l3-8 4 16 3-8h4" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-xl sm:text-2xl font-semibold tracking-tight text-white">Manager Mood Pulse</h1>
+        <p class="text-sm text-zinc-400">Read the room before you send the pitch.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 rounded-full glass px-4 py-2 text-sm text-zinc-300">
+      <span class="pulse-dot h-2 w-2 rounded-full bg-emerald-400"></span>
+      Gemini 2.5 Flash connected
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16 space-y-6">
+
+    <!-- Row 1: Intake + Gauge -->
+    <section class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+      <!-- Intake panel -->
+      <div class="glass rounded-2xl p-6 lg:col-span-3 transition-all duration-300">
+        <div class="flex flex-wrap items-end justify-between gap-4 mb-5">
+          <div>
+            <h2 class="text-lg font-semibold text-white">Message intake</h2>
+            <p class="text-sm text-zinc-400">Paste what your manager wrote and choose where it came from.</p>
+          </div>
+          <div class="w-full sm:w-52">
+            <label for="sourceSelect" class="block text-xs font-medium text-zinc-400 mb-1.5">Pipeline source</label>
+            <select id="sourceSelect"
+              class="w-full rounded-lg bg-zinc-900/80 border border-white/10 px-3 py-2 text-sm text-zinc-200 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/50">
+              <option>Email</option>
+              <option>Slack</option>
+              <option>Microsoft Teams</option>
+              <option>Meeting Notes</option>
+              <option>Jira Comment</option>
+              <option>Direct Input</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <span class="text-xs text-zinc-500">Try a sample:</span>
+          <button type="button" data-sample="calm"
+            class="sample-chip rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300 transition-all duration-300 hover:bg-emerald-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">Supportive</button>
+          <button type="button" data-sample="tense"
+            class="sample-chip rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-300 transition-all duration-300 hover:bg-amber-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">Passive-aggressive</button>
+          <button type="button" data-sample="hostile"
+            class="sample-chip rounded-full border border-rose-500/30 bg-rose-500/10 px-3 py-1 text-xs text-rose-300 transition-all duration-300 hover:bg-rose-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400">Escalating</button>
+        </div>
+
+        <textarea id="messageInput" rows="8" maxlength="5000"
+          placeholder="Paste your manager's message here..."
+          class="w-full resize-y rounded-xl bg-zinc-900/70 border border-white/10 px-4 py-3 text-sm leading-relaxed text-zinc-100 placeholder-zinc-600 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 focus:border-indigo-500/50"></textarea>
+
+        <!-- Live text metrics -->
+        <div class="glass-inner rounded-xl mt-4 p-4 transition-all duration-300">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-baseline gap-3">
+              <span class="text-sm font-medium text-zinc-300">Brevity Index</span>
+              <span id="brevityChars" class="font-mono text-2xl font-medium text-white tabular-nums transition-all duration-300">0</span>
+              <span class="text-xs text-zinc-500">characters</span>
+            </div>
+            <span id="brevityTier"
+              class="rounded-full border px-3 py-1 text-xs font-medium transition-all duration-300"
+              style="color:#a1a1aa;border-color:rgba(161,161,170,0.3);background:rgba(161,161,170,0.08)">Waiting for input</span>
+          </div>
+          <div class="mt-3 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+            <div id="brevityBar" class="h-full rounded-full transition-all duration-300" style="width:0%;background:#52525b"></div>
+          </div>
+          <div class="mt-3 grid grid-cols-3 gap-3 text-center">
+            <div>
+              <div id="metricWords" class="font-mono text-base text-zinc-100 tabular-nums">0</div>
+              <div class="text-xs text-zinc-500">Words</div>
+            </div>
+            <div>
+              <div id="metricAvg" class="font-mono text-base text-zinc-100 tabular-nums">0.0</div>
+              <div class="text-xs text-zinc-500">Avg word length</div>
+            </div>
+            <div>
+              <div id="metricCaps" class="font-mono text-base text-zinc-100 tabular-nums">0%</div>
+              <div class="text-xs text-zinc-500">Capitalized letters</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="errorBanner" role="alert"
+          class="mt-4 hidden rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200 transition-all duration-300"></div>
+
+        <div class="mt-5 flex flex-wrap items-center gap-3">
+          <button id="analyzeBtn" type="button"
+            class="inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all duration-300 hover:bg-indigo-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-50">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+            Analyze mood
+          </button>
+          <button id="clearInputBtn" type="button"
+            class="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 transition-all duration-300 hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400">
+            Clear text
+          </button>
+          <span class="text-xs text-zinc-500">Ctrl + Enter also runs the analysis</span>
+        </div>
+      </div>
+
+      <!-- Gauge + advice panel -->
+      <div class="glass relative overflow-hidden rounded-2xl p-6 lg:col-span-2 transition-all duration-300">
+        <h2 class="text-lg font-semibold text-white">Current mood pulse</h2>
+        <p class="text-sm text-zinc-400 mb-4">Higher scores mean a more receptive manager.</p>
+
+        <div class="relative mx-auto h-52 w-52">
+          <svg viewBox="0 0 200 200" class="h-full w-full -rotate-90" aria-hidden="true">
+            <circle cx="100" cy="100" r="84" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="14" />
+            <circle id="gaugeRing" class="gauge-ring" cx="100" cy="100" r="84" fill="none"
+              stroke="#3f3f46" stroke-width="14" stroke-linecap="round"
+              stroke-dasharray="527.79" stroke-dashoffset="527.79" />
+          </svg>
+          <div class="absolute inset-0 grid place-items-center text-center">
+            <div>
+              <div id="gaugeScore" class="font-mono text-5xl font-medium text-white tabular-nums" aria-live="polite">--</div>
+              <div class="text-xs text-zinc-500 mt-1">out of 100</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-center">
+          <span id="gaugeLabel"
+            class="inline-block rounded-full border px-4 py-1.5 text-sm font-medium transition-all duration-300"
+            style="color:#a1a1aa;border-color:rgba(161,161,170,0.3);background:rgba(161,161,170,0.08)">No reading yet</span>
+        </div>
+
+        <div id="adviceCard" class="glass-inner rounded-xl mt-5 p-4 transition-all duration-300">
+          <h3 id="adviceHeading" class="text-sm font-semibold text-white">Your pitch strategy appears here</h3>
+          <p id="adviceText" class="mt-1.5 text-sm leading-relaxed text-zinc-400">Run an analysis to see how to time and frame your next request.</p>
+          <div id="indicatorChips" class="mt-3 flex flex-wrap gap-2"></div>
+          <p id="signalLine" class="mt-3 font-mono text-xs text-zinc-500"></p>
+        </div>
+
+        <!-- Loading overlay -->
+        <div id="loadingOverlay"
+          class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-zinc-950/75 backdrop-blur-sm opacity-0 pointer-events-none transition-all duration-300">
+          <div class="spinner h-12 w-12 rounded-full border-4 border-indigo-500/20 border-t-indigo-400"></div>
+          <p class="text-sm text-zinc-300">Reading tone, punctuation and phrasing...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 2: Trend chart -->
+    <section class="glass rounded-2xl p-6 transition-all duration-300">
+      <div class="flex flex-wrap items-end justify-between gap-2 mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Mood trajectory</h2>
+          <p class="text-sm text-zinc-400">Score of your last 20 analyses, oldest to newest.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-4 text-xs text-zinc-400">
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-500"></span>Receptive</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-indigo-500"></span>Neutral</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-500"></span>Tense</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-500"></span>Hostile</span>
+        </div>
+      </div>
+      <div class="relative h-64">
+        <canvas id="moodChart" aria-label="Mood score history line chart" role="img"></canvas>
+        <div id="chartEmpty" class="absolute inset-0 grid place-items-center text-center text-sm text-zinc-500 transition-all duration-300">
+          Your trend line starts after the first analysis.
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 3: Communication Vector Log -->
+    <section class="glass rounded-2xl p-6 transition-all duration-300">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3">
+          <h2 class="text-lg font-semibold text-white">Communication Vector Log</h2>
+          <span id="logCount" class="rounded-full bg-white/5 border border-white/10 px-2.5 py-0.5 text-xs text-zinc-300 tabular-nums">0 entries</span>
+        </div>
+        <button id="clearLogBtn" type="button"
+          class="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-300 transition-all duration-300 hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400">
+          Clear log
+        </button>
+      </div>
+
+      <div class="thin-scroll overflow-x-auto rounded-xl border border-white/5">
+        <table class="w-full min-w-[640px] text-left text-sm">
+          <thead class="bg-white/[0.03] text-xs text-zinc-400">
+            <tr>
+              <th scope="col" class="px-4 py-3 font-medium">Time Stamp</th>
+              <th scope="col" class="px-4 py-3 font-medium">Pipeline Source</th>
+              <th scope="col" class="px-4 py-3 font-medium">Mood Label</th>
+              <th scope="col" class="px-4 py-3 font-medium">Score Vector</th>
+              <th scope="col" class="px-4 py-3 font-medium text-right">Advice</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+        <div id="logEmpty" class="px-4 py-10 text-center text-sm text-zinc-500">
+          No entries yet. Analyze a message and it will be logged here.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Advice modal -->
+  <div id="adviceModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 opacity-0 pointer-events-none transition-all duration-300" role="dialog" aria-modal="true" aria-labelledby="modalHeading">
+    <div id="modalBackdrop" class="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm"></div>
+    <div id="modalPanel" class="modal-panel glass relative w-full max-w-lg max-h-[90vh] overflow-y-auto thin-scroll rounded-2xl p-6 scale-95 translate-y-3">
+      <button id="modalClose" type="button" aria-label="Close"
+        class="absolute right-4 top-4 rounded-lg p-1.5 text-zinc-400 transition-all duration-300 hover:bg-white/10 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-300">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+
+      <div class="flex flex-wrap items-center gap-2 pr-8">
+        <span id="modalLabel" class="rounded-full border px-3 py-1 text-xs font-medium"></span>
+        <span id="modalMeta" class="text-xs text-zinc-500"></span>
+      </div>
+      <h3 id="modalHeading" class="mt-4 text-xl font-semibold text-white"></h3>
+      <p id="modalText" class="mt-2 text-sm leading-relaxed text-zinc-300"></p>
+
+      <div class="mt-5">
+        <h4 class="text-xs font-medium text-zinc-400 mb-2">Evidence behind the score</h4>
+        <ul id="modalIndicators" class="space-y-1.5 text-sm text-zinc-300"></ul>
+      </div>
+
+      <div class="mt-5">
+        <h4 class="text-xs font-medium text-zinc-400 mb-2">Original message</h4>
+        <pre id="modalExcerpt" class="glass-inner thin-scroll max-h-40 overflow-auto whitespace-pre-wrap rounded-lg p-3 font-mono text-xs leading-relaxed text-zinc-400"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      /* ---------- Constants ---------- */
+      var STORAGE_KEY = 'moodPulseHistory.v1';
+      var MAX_HISTORY = 50;
+      var CHART_POINTS = 20;
+      var GAUGE_CIRC = 2 * Math.PI * 84;
+
+      var COLORS = {
+        emerald: { hex: '#10b981', text: '#6ee7b7', soft: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.35)' },
+        indigo:  { hex: '#6366f1', text: '#a5b4fc', soft: 'rgba(99,102,241,0.12)', border: 'rgba(99,102,241,0.35)' },
+        amber:   { hex: '#f59e0b', text: '#fcd34d', soft: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
+        rose:    { hex: '#f43f5e', text: '#fda4af', soft: 'rgba(244,63,94,0.12)',  border: 'rgba(244,63,94,0.35)' },
+        idle:    { hex: '#3f3f46', text: '#a1a1aa', soft: 'rgba(161,161,170,0.08)', border: 'rgba(161,161,170,0.3)' }
+      };
+
+      var SAMPLES = {
+        calm: 'Thanks for the update, team. Great progress on the Q3 pipeline. Let\'s sync Thursday to plan next steps, and take the time you need on the rest.',
+        tense: 'Per my last email, the report was due yesterday... Noted that it\'s still not here. Going forward, I\'d appreciate it if deadlines were actually respected. Fine.',
+        hostile: 'WHY is this STILL broken?! I told you TWICE. Fix it. Today.'
+      };
+
+      /* ---------- Elements ---------- */
+      var $ = function (id) { return document.getElementById(id); };
+      var input = $('messageInput');
+      var sourceSelect = $('sourceSelect');
+      var analyzeBtn = $('analyzeBtn');
+      var errorBanner = $('errorBanner');
+      var loadingOverlay = $('loadingOverlay');
+      var gaugeRing = $('gaugeRing');
+      var gaugeScore = $('gaugeScore');
+      var gaugeLabel = $('gaugeLabel');
+      var logBody = $('logBody');
+      var logEmpty = $('logEmpty');
+      var modal = $('adviceModal');
+      var modalPanel = $('modalPanel');
+
+      /* ---------- State ---------- */
+      var history = loadHistory();
+      var displayedScore = 0;
+      var scoreAnimFrame = null;
+      var chart = null;
+      var chartEntries = [];
+      var lastFocused = null;
+
+      /* ---------- Helpers ---------- */
+      function esc(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+
+      function pillStyle(colorKey) {
+        var c = COLORS[colorKey] || COLORS.idle;
+        return 'color:' + c.text + ';border-color:' + c.border + ';background:' + c.soft;
+      }
+
+      function formatStamp(iso) {
+        var d = new Date(iso);
+        return {
+          date: d.toLocaleDateString([], { month: 'short', day: '2-digit' }),
+          time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        };
+      }
+
+      function loadHistory() {
+        try {
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          var parsed = raw ? JSON.parse(raw) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+          return [];
+        }
+      }
+
+      function saveHistory() {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+        } catch (e) { /* storage unavailable: log still works for this session */ }
+      }
+
+      /* ---------- Brevity Index (live metrics) ---------- */
+      function brevityTier(chars) {
+        if (chars === 0) return { label: 'Waiting for input', color: 'idle', bar: '#52525b' };
+        if (chars < 40) return { label: 'Terse', color: 'amber', bar: COLORS.amber.hex };
+        if (chars < 160) return { label: 'Concise', color: 'emerald', bar: COLORS.emerald.hex };
+        if (chars < 500) return { label: 'Balanced', color: 'indigo', bar: COLORS.indigo.hex };
+        return { label: 'Verbose', color: 'rose', bar: COLORS.rose.hex };
+      }
+
+      function updateMetrics() {
+        var text = input.value;
+        var chars = text.length;
+        var trimmed = text.trim();
+        var words = trimmed ? trimmed.split(/\s+/).length : 0;
+        var letters = (text.match(/[A-Za-z\u00C0-\u024F]/g) || []).length;
+        var uppers = (text.match(/[A-Z\u00C0-\u00DE]/g) || []).length;
+        var wordLetters = (trimmed.match(/[A-Za-z\u00C0-\u024F]/g) || []).length;
+        var avg = words ? (wordLetters / words) : 0;
+        var capsPct = letters ? (uppers / letters) * 100 : 0;
+        var tier = brevityTier(chars);
+
+        $('brevityChars').textContent = chars.toLocaleString();
+        $('metricWords').textContent = words.toLocaleString();
+        $('metricAvg').textContent = avg.toFixed(1);
+        $('metricCaps').textContent = Math.round(capsPct) + '%';
+
+        var tierEl = $('brevityTier');
+        tierEl.textContent = tier.label;
+        tierEl.setAttribute('style', pillStyle(tier.color));
+
+        var bar = $('brevityBar');
+        bar.style.width = Math.min(100, (chars / 1000) * 100) + '%';
+        bar.style.background = tier.bar;
+      }
+
+      /* ---------- Gauge ---------- */
+      function animateScore(target) {
+        if (scoreAnimFrame) cancelAnimationFrame(scoreAnimFrame);
+        var start = displayedScore;
+        var begin = null;
+        var duration = 900;
+        function step(ts) {
+          if (begin === null) begin = ts;
+          var t = Math.min(1, (ts - begin) / duration);
+          var eased = 1 - Math.pow(1 - t, 3);
+          displayedScore = Math.round(start + (target - start) * eased);
+          gaugeScore.textContent = displayedScore;
+          if (t < 1) scoreAnimFrame = requestAnimationFrame(step);
+        }
+        scoreAnimFrame = requestAnimationFrame(step);
+      }
+
+      function setGauge(score, colorKey, label) {
+        var c = COLORS[colorKey] || COLORS.idle;
+        gaugeRing.style.strokeDashoffset = GAUGE_CIRC * (1 - score / 100);
+        gaugeRing.style.stroke = c.hex;
+        gaugeRing.style.filter = 'drop-shadow(0 0 8px ' + c.hex + ')';
+        gaugeLabel.textContent = label;
+        gaugeLabel.setAttribute('style', pillStyle(colorKey));
+        animateScore(score);
+      }
+
+      function renderAdvice(data) {
+        $('adviceHeading').textContent = data.pitchHeading || 'Proceed with care';
+        $('adviceText').textContent = data.pitchText || '';
+
+        var chips = $('indicatorChips');
+        chips.innerHTML = '';
+        (data.keyIndicators || []).forEach(function (item) {
+          var chip = document.createElement('span');
+          chip.className = 'rounded-md border px-2 py-1 text-xs';
+          chip.setAttribute('style', pillStyle(data.color));
+          chip.textContent = item;
+          chips.appendChild(chip);
+        });
+
+        var s = data.signals;
+        $('signalLine').textContent = s
+          ? 'Ellipses ' + s.ellipses + '  |  ?!/!! runs ' + s.interrobangs +
+            '  |  ALL-CAPS words ' + s.capsWords +
+            '  |  Flagged phrases ' + (s.passiveAggressiveHits ? s.passiveAggressiveHits.length : 0)
+          : '';
+      }
+
+      /* ---------- Chart ---------- */
+      function initChart() {
+        var ctx = $('moodChart').getContext('2d');
+        chart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [{
+              data: [],
+              borderColor: '#818cf8',
+              borderWidth: 2.5,
+              tension: 0.4,
+              fill: true,
+              backgroundColor: function (context) {
+                var area = context.chart.chartArea;
+                if (!area) return 'rgba(99,102,241,0.15)';
+                var g = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+                g.addColorStop(0, 'rgba(99,102,241,0.35)');
+                g.addColorStop(1, 'rgba(99,102,241,0)');
+                return g;
+              },
+              pointRadius: 5,
+              pointHoverRadius: 8,
+              pointBorderWidth: 2,
+              pointBorderColor: '#09090b',
+              pointBackgroundColor: [],
+              segment: {
+                borderColor: function (ctx) {
+                  var entry = chartEntries[ctx.p1DataIndex];
+                  return entry ? (COLORS[entry.color] || COLORS.indigo).hex : '#818cf8';
+                }
+              }
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 700, easing: 'easeOutQuart' },
+            interaction: { mode: 'nearest', intersect: false },
+            scales: {
+              y: {
+                min: 0, max: 100,
+                ticks: { color: '#71717a', stepSize: 25 },
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                border: { display: false }
+              },
+              x: {
+                ticks: { color: '#71717a', maxRotation: 0, autoSkip: true },
+                grid: { display: false },
+                border: { display: false }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: 'rgba(24,24,27,0.95)',
+                borderColor: 'rgba(255,255,255,0.1)',
+                borderWidth: 1,
+                titleColor: '#e4e4e7',
+                bodyColor: '#d4d4d8',
+                padding: 10,
+                displayColors: false,
+                callbacks: {
+                  label: function (item) { return 'Score: ' + item.parsed.y; },
+                  afterLabel: function (item) {
+                    var entry = chartEntries[item.dataIndex];
+                    return entry ? entry.label + ' (' + entry.source + ')' : '';
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      function updateChart() {
+        chartEntries = history.slice(0, CHART_POINTS).reverse();
+        var ds = chart.data.datasets[0];
+        chart.data.labels = chartEntries.map(function (e) { return formatStamp(e.ts).time; });
+        ds.data = chartEntries.map(function (e) { return e.score; });
+        ds.pointBackgroundColor = chartEntries.map(function (e) { return (COLORS[e.color] || COLORS.indigo).hex; });
+        chart.update();
+
+        var empty = $('chartEmpty');
+        empty.style.opacity = chartEntries.length ? '0' : '1';
+        empty.style.pointerEvents = chartEntries.length ? 'none' : 'auto';
+      }
+
+      /* ---------- Communication Vector Log ---------- */
+      function renderLog(newId) {
+        $('logCount').textContent = history.length + (history.length === 1 ? ' entry' : ' entries');
+        logEmpty.classList.toggle('hidden', history.length > 0);
+
+        logBody.innerHTML = history.map(function (e) {
+          var c = COLORS[e.color] || COLORS.idle;
+          var stamp = formatStamp(e.ts);
+          return '' +
+            '<tr class="border-t border-white/5 transition-all duration-300 hover:bg-white/[0.04]' + (e.id === newId ? ' row-enter' : '') + '">' +
+              '<td class="px-4 py-3 whitespace-nowrap">' +
+                '<div class="font-mono text-xs text-zinc-200">' + esc(stamp.time) + '</div>' +
+                '<div class="text-xs text-zinc-500">' + esc(stamp.date) + '</div>' +
+              '</td>' +
+              '<td class="px-4 py-3 whitespace-nowrap text-zinc-300">' + esc(e.source) + '</td>' +
+              '<td class="px-4 py-3 whitespace-nowrap">' +
+                '<span class="rounded-full border px-2.5 py-1 text-xs font-medium" style="' + pillStyle(e.color) + '">' + esc(e.label) + '</span>' +
+              '</td>' +
+              '<td class="px-4 py-3 whitespace-nowrap">' +
+                '<div class="flex items-center gap-3">' +
+                  '<span class="w-8 font-mono text-sm tabular-nums text-zinc-100">' + esc(e.score) + '</span>' +
+                  '<div class="h-1.5 w-28 overflow-hidden rounded-full bg-zinc-800">' +
+                    '<div class="h-full rounded-full transition-all duration-300" style="width:' + Number(e.score) + '%;background:' + c.hex + '"></div>' +
+                  '</div>' +
+                '</div>' +
+              '</td>' +
+              '<td class="px-4 py-3 text-right">' +
+                '<button type="button" data-id="' + esc(e.id) + '" title="' + esc(e.pitchHeading) + '" ' +
+                  'class="view-advice rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 transition-all duration-300 hover:border-indigo-500/50 hover:bg-indigo-500/10 hover:text-indigo-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400">View Advice</button>' +
+              '</td>' +
+            '</tr>';
+        }).join('');
+      }
+
+      /* ---------- Modal ---------- */
+      function openModal(id) {
+        var entry = history.filter(function (e) { return e.id === id; })[0];
+        if (!entry) return;
+        lastFocused = document.activeElement;
+
+        var label = $('modalLabel');
+        label.textContent = entry.label + '  |  ' + entry.score + '/100';
+        label.setAttribute('style', pillStyle(entry.color));
+
+        var stamp = formatStamp(entry.ts);
+        $('modalMeta').textContent = entry.source + ' on ' + stamp.date + ' at ' + stamp.time;
+        $('modalHeading').textContent = entry.pitchHeading;
+        $('modalText').textContent = entry.pitchText;
+        $('modalExcerpt').textContent = entry.excerpt;
+
+        var list = $('modalIndicators');
+        list.innerHTML = '';
+        (entry.keyIndicators || []).forEach(function (item) {
+          var li = document.createElement('li');
+          li.className = 'flex gap-2';
+          var dot = document.createElement('span');
+          dot.className = 'mt-2 h-1.5 w-1.5 shrink-0 rounded-full';
+          dot.style.background = (COLORS[entry.color] || COLORS.idle).hex;
+          var span = document.createElement('span');
+          span.textContent = item;
+          li.appendChild(dot);
+          li.appendChild(span);
+          list.appendChild(li);
+        });
+
+        modal.classList.remove('opacity-0', 'pointer-events-none');
+        modalPanel.classList.remove('scale-95', 'translate-y-3');
+        $('modalClose').focus();
+      }
+
+      function closeModal() {
+        modal.classList.add('opacity-0', 'pointer-events-none');
+        modalPanel.classList.add('scale-95', 'translate-y-3');
+        if (lastFocused && lastFocused.focus) lastFocused.focus();
+      }
+
+      /* ---------- UI state ---------- */
+      function setLoading(isLoading) {
+        analyzeBtn.disabled = isLoading;
+        loadingOverlay.classList.toggle('opacity-0', !isLoading);
+        loadingOverlay.classList.toggle('pointer-events-none', !isLoading);
+      }
+
+      function showError(message) {
+        errorBanner.textContent = message;
+        errorBanner.classList.remove('hidden');
+      }
+
+      function hideError() {
+        errorBanner.classList.add('hidden');
+        errorBanner.textContent = '';
+      }
+
+      /* ---------- Analyze ---------- */
+      async function analyze() {
+        var text = input.value.trim();
+        if (!text) {
+          showError('Paste a manager message first, then run the analysis.');
+          input.focus();
+          return;
+        }
+
+        hideError();
+        setLoading(true);
+
+        try {
+          var res = await fetch('/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, source: sourceSelect.value })
+          });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok) {
+            throw new Error(data.error || 'Server error (' + res.status + ')');
+          }
+
+          setGauge(data.score, data.color, data.label);
+          renderAdvice(data);
+
+          var entry = {
+            id: 'e' + Date.now() + Math.random().toString(36).slice(2, 7),
+            ts: new Date().toISOString(),
+            source: sourceSelect.value,
+            label: data.label,
+            color: data.color,
+            score: data.score,
+            pitchHeading: data.pitchHeading,
+            pitchText: data.pitchText,
+            keyIndicators: data.keyIndicators || [],
+            excerpt: text.length > 600 ? text.slice(0, 600) + '...' : text
+          };
+          history.unshift(entry);
+          history = history.slice(0, MAX_HISTORY);
+          saveHistory();
+          renderLog(entry.id);
+          updateChart();
+        } catch (err) {
+          showError(err.message || 'Something went wrong. Check the Flask console and try again.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      /* ---------- Events ---------- */
+      input.addEventListener('input', updateMetrics);
+      input.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          analyze();
+        }
+      });
+      analyzeBtn.addEventListener('click', analyze);
+
+      $('clearInputBtn').addEventListener('click', function () {
+        input.value = '';
+        updateMetrics();
+        hideError();
+        input.focus();
+      });
+
+      document.querySelectorAll('.sample-chip').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          input.value = SAMPLES[btn.getAttribute('data-sample')];
+          updateMetrics();
+          hideError();
+          input.focus();
+        });
+      });
+
+      logBody.addEventListener('click', function (e) {
+        var btn = e.target.closest('.view-advice');
+        if (btn) openModal(btn.getAttribute('data-id'));
+      });
+
+      $('clearLogBtn').addEventListener('click', function () {
+        if (!history.length) return;
+        if (!window.confirm('Remove all entries from the Communication Vector Log?')) return;
+        history = [];
+        saveHistory();
+        renderLog();
+        updateChart();
+      });
+
+      $('modalClose').addEventListener('click', closeModal);
+      $('modalBackdrop').addEventListener('click', closeModal);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && !modal.classList.contains('pointer-events-none')) closeModal();
+      });
+
+      /* ---------- Boot ---------- */
+      initChart();
+      updateMetrics();
+      renderLog();
+      updateChart();
+
+      if (history.length) {
+        var latest = history[0];
+        setGauge(latest.score, latest.color, latest.label);
+        renderAdvice({
+          pitchHeading: latest.pitchHeading,
+          pitchText: latest.pitchText,
+          keyIndicators: latest.keyIndicators,
+          color: latest.color
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
